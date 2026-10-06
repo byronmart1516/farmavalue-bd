@@ -198,7 +198,95 @@ CREATE TABLE auditoria (                         -- NUEVA (la llenan triggers)
 );
 
 
+---------------------------------------------------------------------------
 
 
 
-SELECT count(*) FROM information_schema.tables WHERE table_schema = 'farmavalue';
+ALTER TABLE sucursal        ADD CHECK (tipo IN ('FARMACIA','BODEGA')),
+                            ADD UNIQUE (nombre);
+ALTER TABLE producto        ADD UNIQUE (codigo),
+                            ADD CHECK (precio_venta > 0);
+ALTER TABLE lote            ADD UNIQUE (id_producto, numero_lote),
+                            ADD CHECK (fecha_vencimiento > fecha_fabricacion);
+ALTER TABLE inventario_lote ADD CHECK (existencia >= 0),
+                            ADD CHECK (reservada >= 0 AND reservada <= existencia);
+ALTER TABLE aseguradora     ADD CHECK (porcentaje_cobertura BETWEEN 0 AND 100);
+ALTER TABLE cliente         ADD UNIQUE (email),
+                            ADD CHECK (puntos >= 0);
+ALTER TABLE empleado        ADD CHECK (puesto IN ('DEPENDIENTE','CAJERO','AGENTE_CALL','BODEGUERO','ADMIN'));
+ALTER TABLE receta          ADD UNIQUE (numero_receta),
+                            ADD CHECK (fecha_emision <= CURRENT_DATE);
+ALTER TABLE pasarela        ADD UNIQUE (nombre),
+                            ADD CHECK (comision_pct BETWEEN 0 AND 100);
+ALTER TABLE pedido          ADD CHECK (canal IN ('APP','POS','CALL_CENTER')),
+                            ADD CHECK (estado IN ('PENDIENTE','PAGADO','ENTREGADO','ANULADO'));
+ALTER TABLE promocion       ADD CHECK (porcentaje_descuento > 0 AND porcentaje_descuento <= 100),
+                            ADD CHECK (fecha_fin >= fecha_inicio);
+ALTER TABLE detalle_pedido  ADD CHECK (cantidad > 0),
+                            ADD CHECK (descuento_unitario >= 0 AND descuento_unitario <= precio_unitario);
+ALTER TABLE pago            ADD UNIQUE (id_pedido),
+                            ADD CHECK (monto_bruto >= 0 AND monto_neto >= 0);
+ALTER TABLE intento_pago    ADD CHECK (estado IN ('APROBADO','RECHAZADO','ERROR')),
+                            ADD CHECK (monto >= 0);
+ALTER TABLE reserva         ADD CHECK (cantidad > 0),
+                            ADD CHECK (expira_en > creada_en),
+                            ADD CHECK (estado IN ('ACTIVA','CONFIRMADA','EXPIRADA'));
+ALTER TABLE movimiento_inventario
+                            ADD CHECK (tipo IN ('ENTRADA','VENTA','AJUSTE','MERMA','TRASLADO_SALIDA','TRASLADO_ENTRADA','DEVOLUCION')),
+                            ADD CHECK (cantidad <> 0);
+ALTER TABLE devolucion_laboratorio
+                            ADD CHECK (cantidad > 0),
+                            ADD CHECK (motivo IN ('PROXIMO_A_VENCER','VENCIDO','DANADO','RETIRO_SANITARIO')),
+                            ADD CHECK (estado IN ('SOLICITADA','ENVIADA','ACREDITADA')),
+                            ADD CHECK (monto_credito >= 0);
+ALTER TABLE auditoria       ADD CHECK (operacion IN ('INSERT','UPDATE','DELETE'));
+
+-- Índices: por aquí buscan el checkout FEFO, los reportes y el kardex
+CREATE INDEX idx_lote_producto_venc ON lote (id_producto, fecha_vencimiento);
+CREATE INDEX idx_inv_sucursal       ON inventario_lote (id_sucursal);
+CREATE INDEX idx_pedido_fecha       ON pedido (fecha);
+CREATE INDEX idx_reserva_expira     ON reserva (expira_en) WHERE estado = 'ACTIVA';
+CREATE INDEX idx_movinv_lote        ON movimiento_inventario (id_lote, id_sucursal, fecha);
+CREATE INDEX idx_promo_lote         ON promocion (id_lote) WHERE activa;
+CREATE INDEX idx_auditoria_tabla    ON auditoria (tabla_afectada, fecha);
+
+-- Auditoría automática: un solo trigger genérico para varias tablas
+CREATE OR REPLACE FUNCTION fn_auditoria() RETURNS trigger AS $$
+BEGIN
+  INSERT INTO auditoria (tabla_afectada, operacion, valor_anterior, valor_nuevo)
+  VALUES (TG_TABLE_NAME, TG_OP,
+          CASE WHEN TG_OP IN ('UPDATE','DELETE') THEN to_jsonb(OLD) END,
+          CASE WHEN TG_OP IN ('INSERT','UPDATE') THEN to_jsonb(NEW) END);
+  RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_aud_inventario AFTER UPDATE OR DELETE ON inventario_lote
+  FOR EACH ROW EXECUTE FUNCTION fn_auditoria();
+CREATE TRIGGER trg_aud_producto   AFTER UPDATE OR DELETE ON producto
+  FOR EACH ROW EXECUTE FUNCTION fn_auditoria();
+CREATE TRIGGER trg_aud_pago       AFTER INSERT OR UPDATE OR DELETE ON pago
+  FOR EACH ROW EXECUTE FUNCTION fn_auditoria();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
