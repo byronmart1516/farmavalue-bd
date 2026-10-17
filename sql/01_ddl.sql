@@ -253,7 +253,7 @@ CREATE INDEX idx_auditoria_tabla    ON auditoria (tabla_afectada, fecha);
 -- Auditoría automática: un solo trigger genérico para varias tablas
 CREATE OR REPLACE FUNCTION fn_auditoria() RETURNS trigger AS $$
 BEGIN
-  INSERT INTO auditoria (tabla_afectada, operacion, valor_anterior, valor_nuevo)
+  INSERT INTO farmavalue.auditoria (tabla_afectada, operacion, valor_anterior, valor_nuevo)
   VALUES (TG_TABLE_NAME, TG_OP,
           CASE WHEN TG_OP IN ('UPDATE','DELETE') THEN to_jsonb(OLD) END,
           CASE WHEN TG_OP IN ('INSERT','UPDATE') THEN to_jsonb(NEW) END);
