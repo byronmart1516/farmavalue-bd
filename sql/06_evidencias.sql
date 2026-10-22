@@ -119,3 +119,16 @@ ROLLBACK;
 BEGIN;
 INSERT INTO pedido (id_cliente, id_sucursal, canal) VALUES (9999, 1, 'APP');
 ROLLBACK;
+
+
+-- ============================================================================
+-- HISTORIAL DE PRECIOS (vista v_historial_precios, sin tabla nueva)
+-- a16_historial_precios.png
+-- Simula dos cambios de precio y los deshace al final. Selecciona TODO el
+-- bloque (BEGIN ... ROLLBACK) y pulsa Alt + X; la captura es el resultado del SELECT.
+-- ============================================================================
+BEGIN;
+UPDATE producto SET precio_venta = 49.50 WHERE codigo = 'P005';   -- sube 10 %
+UPDATE producto SET precio_venta = 47.00 WHERE codigo = 'P005';   -- promoción
+SELECT * FROM v_historial_precios;
+ROLLBACK;

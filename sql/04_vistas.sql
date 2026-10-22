@@ -123,3 +123,22 @@ JOIN lote     l ON l.id_lote     = m.id_lote
 JOIN producto p ON p.id_producto = l.id_producto
 JOIN sucursal s ON s.id_sucursal = m.id_sucursal
 GROUP BY s.nombre, l.numero_lote, p.codigo, il.existencia;
+
+-- Historial de precios: sale de la auditoría, sin tabla nueva.
+-- trg_aud_producto guarda la fila completa antes y después de cada cambio en producto;
+-- esta vista se queda solo con los cambios de precio_venta.
+CREATE OR REPLACE VIEW v_historial_precios AS
+SELECT p.codigo,
+       p.nombre                                          AS producto,
+       (a.valor_anterior ->> 'precio_venta')::numeric    AS precio_anterior,
+       (a.valor_nuevo    ->> 'precio_venta')::numeric    AS precio_nuevo,
+       round(((a.valor_nuevo ->> 'precio_venta')::numeric
+              - (a.valor_anterior ->> 'precio_venta')::numeric)
+             / (a.valor_anterior ->> 'precio_venta')::numeric * 100, 2) AS variacion_pct,
+       a.usuario,
+       a.fecha                                           AS fecha_cambio
+FROM auditoria a
+JOIN producto p ON p.id_producto = (a.valor_nuevo ->> 'id_producto')::int
+WHERE a.tabla_afectada = 'producto'
+  AND a.operacion = 'UPDATE'
+  AND a.valor_anterior ->> 'precio_venta' IS DISTINCT FROM a.valor_nuevo ->> 'precio_venta';
