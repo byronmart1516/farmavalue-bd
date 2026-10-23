@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>FarmaValue - Prototipo Rol D: Pruebas, Concurrencia y Recuperación</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; background: #0f172a; }
+    .slide-container { width: 1280px; height: 720px; margin: 0 auto; overflow: hidden; box-sizing: border-box; }
+  </style>
+</head>
+<body>
+
+  <!-- SLIDE 1: PORTADA -->
+  <div class="slide-container" id="slide1" style="padding:56px 64px; background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%); display:flex; flex-direction:column; justify-content:space-between; position:relative;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div style="background:#0284c7; width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; color:#ffffff; font-weight:800; font-size:20px;">F</div>
+        <span style="font-size:20px; font-weight:700; color:#ffffff; letter-spacing:-0.5px;">FarmaValue</span>
+      </div>
+      <span style="background:rgba(2,132,199,0.15); color:#38bdf8; padding:6px 16px; border-radius:20px; font-size:14px; font-weight:600; border:1px solid rgba(56,189,248,0.3);">ROL D: PRUEBAS Y PROTOTIPO</span>
+    </div>
+
+    <div>
+      <p style="font-size:16px; font-weight:600; color:#38bdf8; text-transform:uppercase; letter-spacing:1.5px; margin-bottom:12px;">Simulación de Arquitectura & Concurrencia</p>
+      <h1 style="font-size:52px; font-weight:800; color:#ffffff; line-height:1.1; margin-bottom:20px; max-width:900px;">Prototipo de Integridad y Control de Concurrencia</h1>
+      <p style="font-size:20px; color:#94a3b8; max-width:750px; line-height:1.5;">Demostración interactiva de prevención de sobreventas entre App Móvil y POS Físico mediante Bloqueos Pesimistas (FOR UPDATE) y recuperación transaccional.</p>
+    </div>
+
+    <div style="display:flex; gap:32px; border-top:1px solid #334155; padding-top:24px;">
+      <div>
+        <p style="font-size:12px; color:#64748b; font-weight:600; text-transform:uppercase;">Especialidad</p>
+        <p style="font-size:16px; color:#f1f5f9; font-weight:600; margin-top:4px;">Base de Datos & Concurrencia</p>
+      </div>
+      <div>
+        <p style="font-size:12px; color:#64748b; font-weight:600; text-transform:uppercase;">Esquema BD</p>
+        <p style="font-size:16px; color:#f1f5f9; font-weight:600; margin-top:4px;">farmavalue (21 Tablas)</p>
+      </div>
+      <div>
+        <p style="font-size:12px; color:#64748b; font-weight:600; text-transform:uppercase;">Estrategia Bloqueo</p>
+        <p style="font-size:16px; color:#f1f5f9; font-weight:600; margin-top:4px;">FOR UPDATE / Read Committed</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 2: OBJETIVOS ROL D -->
+  <div class="slide-container" id="slide2" style="padding:48px 64px; background:#f8fafc; display:flex; flex-direction:column;">
+    <div style="margin-bottom:32px;">
+      <p style="font-size:14px; font-weight:700; color:#0284c7; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Alcance Operativo</p>
+      <h2 style="font-size:32px; font-weight:800; color:#0f172a; line-height:1.2;">Responsabilidades Clave del Rol D</h2>
+    </div>
+
+    <div style="flex-grow:1; display:flex; align-items:center; justify-content:center;">
+      <div style="display:flex; gap:24px; width:100%;">
+        <div style="background:#ffffff; border-radius:16px; padding:32px; flex:1 1 0; border:1px solid #e2e8f0; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);">
+          <div style="width:48px; height:48px; background:#e0f2fe; border-radius:12px; display:flex; align-items:center; justify-content:center; margin-bottom:20px; color:#0284c7; font-size:20px;">
+            <i class="fa-solid fa-lock"></i>
+          </div>
+          <h3 style="font-size:20px; font-weight:700; color:#0f172a; margin-bottom:10px;">Control de Concurrencia</h3>
+          <p style="font-size:15px; color:#64748b; line-height:1.5;">Garantizar cero sobreventas al consultar e incrementar reservas simultáneamente desde App y POS.</p>
+        </div>
+
+        <div style="background:#ffffff; border-radius:16px; padding:32px; flex:1 1 0; border:1px solid #e2e8f0; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);">
+          <div style="width:48px; height:48px; background:#dcfce7; border-radius:12px; display:flex; align-items:center; justify-content:center; margin-bottom:20px; color:#16a34a; font-size:20px;">
+            <i class="fa-solid fa-shield-halved"></i>
+          </div>
+          <h3 style="font-size:20px; font-weight:700; color:#0f172a; margin-bottom:10px;">Integridad Transaccional</h3>
+          <p style="font-size:15px; color:#64748b; line-height:1.5;">Validar restricciones CHECK y UNIQUE para evitar inventarios negativos y registros duplicados.</p>
+        </div>
+
+        <div style="background:#ffffff; border-radius:16px; padding:32px; flex:1 1 0; border:1px solid #e2e8f0; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);">
+          <div style="width:48px; height:48px; background:#fef3c7; border-radius:12px; display:flex; align-items:center; justify-content:center; margin-bottom:20px; color:#d97706; font-size:20px;">
+            <i class="fa-solid fa-rotate-left"></i>
+          </div>
+          <h3 style="font-size:20px; font-weight:700; color:#0f172a; margin-bottom:10px;">Recuperación (Crash)</h3>
+          <p style="font-size:15px; color:#64748b; line-height:1.5;">Demostrar atomicidad completa con ROLLBACK ante fallos de energía o cancelaciones de pago.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 3: ESCENARIO DE CONCURRENCIA -->
+  <div class="slide-container" id="slide3" style="padding:48px 64px; background:#ffffff; display:flex; flex-direction:column;">
+    <div style="margin-bottom:24px;">
+      <p style="font-size:14px; font-weight:700; color:#0284c7; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Simulación de Conflicto</p>
+      <h2 style="font-size:32px; font-weight:800; color:#0f172a; line-height:1.2;">Conflicto de Inventario: App vs POS Físico</h2>
+    </div>
+
+    <div style="flex-grow:1; display:flex; gap:28px; align-items:center;">
+      <div style="flex:1; background:#f0f9ff; border:2px solid #bae6fd; border-radius:16px; padding:24px; height:100%; display:flex; flex-direction:column;">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
+          <div style="background:#0284c7; color:#ffffff; width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center;"><i class="fa-solid fa-mobile-screen-button"></i></div>
+          <div>
+            <h4 style="font-size:16px; font-weight:700; color:#0369a1;">Sesión A: App Móvil</h4>
+            <p style="font-size:12px; color:#0284c7;">Cliente intentando comprar última unidad</p>
+          </div>
+        </div>
+        <div style="background:#0f172a; color:#38bdf8; padding:14px; border-radius:8px; font-family:'JetBrains Mono', monospace; font-size:12px; margin-bottom:16px; line-height:1.4;">
+          BEGIN;<br>SELECT * FROM inventario_lote<br>WHERE id_lote = 1 <span style="color:#f59e0b;">FOR UPDATE</span>;
+        </div>
+        <div style="background:#dcfce7; border:1px solid #86efac; border-radius:8px; padding:12px; font-size:13px; color:#166534; font-weight:600;">
+          <i class="fa-solid fa-check-circle"></i> Bloqueo otorgado a Sesión A.
+        </div>
+      </div>
+
+      <div style="width:200px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:16px; padding:20px; text-align:center; display:flex; flex-direction:column; justify-content:center;">
+        <span style="font-size:12px; color:#64748b; font-weight:700; text-transform:uppercase;">Stock en Lote 1</span>
+        <span style="font-size:48px; font-weight:800; color:#0f172a; margin:8px 0;">1</span>
+        <span style="font-size:12px; background:#fef3c7; color:#b45309; padding:4px 8px; border-radius:12px; font-weight:700;">
+          <i class="fa-solid fa-lock"></i> BLOQUEADO
+        </span>
+      </div>
+
+      <div style="flex:1; background:#fff7ed; border:2px solid #fed7aa; border-radius:16px; padding:24px; height:100%; display:flex; flex-direction:column;">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
+          <div style="background:#ea580c; color:#ffffff; width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center;"><i class="fa-solid fa-cash-register"></i></div>
+          <div>
+            <h4 style="font-size:16px; font-weight:700; color:#c2410c;">Sesión B: POS Farmacia</h4>
+            <p style="font-size:12px; color:#ea580c;">Cajero escaneando el mismo producto</p>
+          </div>
+        </div>
+        <div style="background:#0f172a; color:#38bdf8; padding:14px; border-radius:8px; font-family:'JetBrains Mono', monospace; font-size:12px; margin-bottom:16px; line-height:1.4;">
+          BEGIN;<br>SELECT * FROM inventario_lote<br>WHERE id_lote = 1 <span style="color:#f59e0b;">FOR UPDATE</span>;
+        </div>
+        <div style="background:#fef2f2; border:1px solid #fca5a5; border-radius:8px; padding:12px; font-size:13px; color:#991b1b; font-weight:600;">
+          <i class="fa-solid fa-hourglass-half"></i> EN ESPERA (Blocked by Sesión A)
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 4: METRICAS -->
+  <div class="slide-container" id="slide4" style="padding:48px 64px; background:#f8fafc; display:flex; flex-direction:column;">
+    <div style="margin-bottom:32px;">
+      <p style="font-size:14px; font-weight:700; color:#0284c7; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Resultados de Evaluación</p>
+      <h2 style="font-size:32px; font-weight:800; color:#0f172a; line-height:1.2;">Métricas de Integridad Transaccional</h2>
+    </div>
+
+    <div style="flex-grow:1; display:flex; flex-direction:column; justify-content:center;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:24px; margin-bottom:40px;">
+        <div style="text-align:center; flex:1;">
+          <p style="font-size:64px; font-weight:800; color:#0284c7; line-height:1;">0</p>
+          <p style="font-size:16px; font-weight:600; color:#64748b; margin-top:8px;">Sobreventas Permitidas</p>
+        </div>
+        <div style="width:1px; height:80px; background:#cbd5e1;"></div>
+        <div style="text-align:center; flex:1;">
+          <p style="font-size:64px; font-weight:800; color:#16a34a; line-height:1;">100%</p>
+          <p style="font-size:16px; font-weight:600; color:#64748b; margin-top:8px;">Consistencia tras Crash (Rollback)</p>
+        </div>
+        <div style="width:1px; height:80px; background:#cbd5e1;"></div>
+        <div style="text-align:center; flex:1;">
+          <p style="font-size:64px; font-weight:800; color:#0f172a; line-height:1;">21</p>
+          <p style="font-size:16px; font-weight:600; color:#64748b; margin-top:8px;">Tablas con Llaves & Checks Validados</p>
+        </div>
+      </div>
+
+      <div style="background:#ffffff; border-radius:12px; padding:20px 24px; border:1px solid #e2e8f0; display:flex; align-items:center; gap:16px;">
+        <div style="color:#0284c7; font-size:24px;"><i class="fa-solid fa-circle-info"></i></div>
+        <p style="font-size:15px; color:#334155; line-height:1.5;">
+          <strong>Conclusión del Rol D:</strong> Los scripts ejecutados en <code style="background:#f1f5f9; padding:2px 6px; border-radius:4px; font-family:'JetBrains Mono'; color:#0284c7;">pruebas_rol_d.sql</code> demuestran que el motor relacional resuelve adecuadamente los conflictos entre la app móvil y las ventas presenciales.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 5: CIERRE -->
+  <div class="slide-container" id="slide5" style="padding:64px; background:#0f172a; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center;">
+    <div style="background:rgba(2,132,199,0.15); color:#38bdf8; width:64px; height:64px; border-radius:20px; display:flex; align-items:center; justify-content:center; font-size:28px; margin-bottom:24px; border:1px solid rgba(56,189,248,0.3);">
+      <i class="fa-solid fa-database"></i>
+    </div>
+    <h2 style="font-size:48px; font-weight:800; color:#ffffff; margin-bottom:16px;">FarmaValue - Rol D Completado</h2>
+    <p style="font-size:20px; color:#94a3b8; max-width:600px; margin-bottom:32px;">Scripts de evaluación, prototipo interactivo y evidencias listas para integración en la rama principal.</p>
+    <div style="width:60px; height:4px; background:#0284c7; border-radius:2px;"></div>
+  </div>
+
+</body>
+</html>
