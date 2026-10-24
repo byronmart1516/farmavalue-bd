@@ -233,3 +233,207 @@ BEGIN
     -- Sin COMMIT aquí: quien llama decide (CALL suelto en autocommit, o dentro de BEGIN ... COMMIT)
 END;
 $$;
+
+-- PROCEDIMIENTOS DE RESERVAS (ROL B - RF-03)
+-- 1. sp_reservar
+-- Reserva stock aplicando FEFO con bloqueo pesimista
+CREATE OR REPLACE PROCEDURE farmavalue.sp_reservar(
+    p_id_cliente INT,
+    p_id_sucursal INT,
+    p_id_producto INT,
+    p_cantidad INT,
+    p_minutos INT DEFAULT 10
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_rec RECORD;
+    v_restante INT := p_cantidad;
+    v_disponible INT;
+    v_a_reservar INT;
+    v_total_disponible INT;
+BEGIN
+    IF p_cantidad <= 0 THEN
+        RAISE EXCEPTION 'La cantidad a reservar debe ser mayor a 0.';
+    END IF;
+
+    -- Verificar disponibilidad total antes de reservar
+    SELECT COALESCE(SUM(existencia - reservada), 0)
+    INTO v_total_disponible
+    FROM farmavalue.inventario_lote il
+    JOIN farmavalue.lote l ON il.id_lote = l.id_lote
+    WHERE il.id_sucursal = p_id_sucursal
+      AND l.id_producto = p_id_producto
+      AND l.fecha_vencimiento > CURRENT_DATE;
+
+    IF v_total_disponible < p_cantidad THEN
+        RAISE EXCEPTION 'Stock insuficiente para reservar. Disponible: %, Solicitado: %', v_total_disponible, p_cantidad;
+    END IF;
+
+    -- FEFO: Recorrer lotes ordenados por fecha de vencimiento con FOR UPDATE
+    FOR v_rec IN
+        SELECT il.id_lote, il.existencia, il.reservada, (il.existencia - il.reservada) AS disponible
+        FROM farmavalue.inventario_lote il
+        JOIN farmavalue.lote l ON il.id_lote = l.id_lote
+        WHERE il.id_sucursal = p_id_sucursal
+          AND l.id_producto = p_id_producto
+          AND l.fecha_vencimiento > CURRENT_DATE
+          AND (il.existencia - il.reservada) > 0
+        ORDER BY l.fecha_vencimiento ASC
+        FOR UPDATE OF il
+    LOOP
+        EXIT WHEN v_restante <= 0;
+
+        v_a_reservar := LEAST(v_rec.disponible, v_restante);
+
+        -- Incrementar el stock reservado en inventario_lote
+        UPDATE farmavalue.inventario_lote
+        SET reservada = reservada + v_a_reservar
+        WHERE id_sucursal = p_id_sucursal AND id_lote = v_rec.id_lote;
+
+        -- Registrar la fila de reserva en estado ACTIVA
+        INSERT INTO farmavalue.reserva (
+            id_cliente, id_lote, id_sucursal, cantidad, creada_en, expira_en, estado
+        ) VALUES (
+            p_id_cliente, v_rec.id_lote, p_id_sucursal, v_a_reservar, NOW(), NOW() + (p_minutos || ' minutes')::INTERVAL, 'ACTIVA'
+        );
+
+        v_restante := v_restante - v_a_reservar;
+    END LOOP;
+END;
+$$;
+
+
+-- 2. sp_confirmar_reserva
+-- Confirma la reserva, libera el stock reservado y ejecuta el cobro con sp_checkout
+CREATE OR REPLACE PROCEDURE farmavalue.sp_confirmar_reserva(
+    p_id_reserva INT,
+    p_canal VARCHAR,
+    p_id_pasarela INT,
+    p_id_empleado INT,
+    p_usar_puntos INT DEFAULT 0,
+    INOUT p_id_pedido INT DEFAULT NULL,
+    INOUT p_monto_neto NUMERIC DEFAULT NULL,
+    INOUT p_estado_pago VARCHAR DEFAULT NULL
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_reserva RECORD;
+    v_items_json JSONB;
+    v_id_receta INT;
+BEGIN
+    -- Bloquear y obtener la reserva
+    SELECT r.*, l.id_producto
+    INTO v_reserva
+    FROM farmavalue.reserva r
+    JOIN farmavalue.lote l ON r.id_lote = l.id_lote
+    WHERE r.id_reserva = p_id_reserva
+    FOR UPDATE OF r;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'La reserva con ID % no existe.', p_id_reserva;
+    END IF;
+
+    IF v_reserva.estado != 'ACTIVA' THEN
+        RAISE EXCEPTION 'La reserva no esta ACTIVA (Estado actual: %).', v_reserva.estado;
+    END IF;
+
+    IF v_reserva.expira_en < NOW() THEN
+        -- Si ya expiro, se marca como EXPIRADA y se libera el stock
+        UPDATE farmavalue.reserva SET estado = 'EXPIRADA' WHERE id_reserva = p_id_reserva;
+        UPDATE farmavalue.inventario_lote 
+        SET reservada = reservada - v_reserva.cantidad 
+        WHERE id_sucursal = v_reserva.id_sucursal AND id_lote = v_reserva.id_lote;
+        
+        RAISE EXCEPTION 'La reserva % ha expirado y fue liberada.', p_id_reserva;
+    END IF;
+
+    -- Descontar el stock reservado antes de procesar la venta
+    UPDATE farmavalue.inventario_lote
+    SET reservada = reservada - v_reserva.cantidad
+    WHERE id_sucursal = v_reserva.id_sucursal AND id_lote = v_reserva.id_lote;
+
+    -- Cambiar estado a CONFIRMADA
+    UPDATE farmavalue.reserva
+    SET estado = 'CONFIRMADA'
+    WHERE id_reserva = p_id_reserva;
+
+    -- Buscar la receta valida si el producto la requiere
+    SELECT id_receta INTO v_id_receta
+    FROM farmavalue.receta
+    WHERE id_cliente = v_reserva.id_cliente 
+      AND id_producto = v_reserva.id_producto 
+      AND NOT usada 
+      AND fecha_emision <= CURRENT_DATE
+    LIMIT 1;
+
+    -- Armar el JSON del producto
+    IF v_id_receta IS NOT NULL THEN
+        v_items_json := jsonb_build_array(
+            jsonb_build_object('id_producto', v_reserva.id_producto, 'cantidad', v_reserva.cantidad, 'id_receta', v_id_receta)
+        );
+    ELSE
+        v_items_json := jsonb_build_array(
+            jsonb_build_object('id_producto', v_reserva.id_producto, 'cantidad', v_reserva.cantidad)
+        );
+    END IF;
+
+    -- Procesar la compra mediante el procedimiento principal
+    CALL farmavalue.sp_checkout(
+        p_id_cliente   => v_reserva.id_cliente,
+        p_id_sucursal  => v_reserva.id_sucursal,
+        p_canal        => p_canal,
+        p_id_pasarela  => p_id_pasarela,
+        p_id_empleado  => p_id_empleado,
+        p_items_json   => v_items_json,
+        p_usar_puntos  => p_usar_puntos,
+        p_id_pedido    => p_id_pedido,
+        p_monto_neto   => p_monto_neto,
+        p_estado_pago  => p_estado_pago
+    );
+END;
+$$;
+
+
+-- 3. sp_liberar_reservas
+-- Libera automáticamente las reservas expiradas (invocado manualmente o por pg_cron)
+CREATE OR REPLACE PROCEDURE farmavalue.sp_liberar_reservas(
+    OUT p_liberadas INT
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_rec RECORD;
+BEGIN
+    p_liberadas := 0;
+
+    -- Buscar reservas expiradas evitando bloqueos concurrentes con SKIP LOCKED
+    FOR v_rec IN
+        SELECT id_reserva, id_sucursal, id_lote, cantidad
+        FROM farmavalue.reserva
+        WHERE estado = 'ACTIVA'
+          AND expira_en < NOW()
+        FOR UPDATE SKIP LOCKED
+    LOOP
+        -- Restar del inventario reservado
+        UPDATE farmavalue.inventario_lote
+        SET reservada = reservada - v_rec.cantidad
+        WHERE id_sucursal = v_rec.id_sucursal AND id_lote = v_rec.id_lote;
+
+        -- Marcar la reserva como EXPIRADA
+        UPDATE farmavalue.reserva
+        SET estado = 'EXPIRADA'
+        WHERE id_reserva = v_rec.id_reserva;
+
+        p_liberadas := p_liberadas + 1;
+    END LOOP;
+END;
+$$;
+
+
+-- Reservar 2 unidades del producto P001 en Zona 10 (Sucursal 1) para el cliente 8
+CALL farmavalue.sp_reservar(p_id_cliente => 8, p_id_sucursal => 1, p_id_producto => 1, p_cantidad => 2, p_minutos => 10);
+
+-- Verificar que aumentó la columna 'reservada'
+SELECT id_lote, existencia, reservada FROM farmavalue.inventario_lote WHERE id_sucursal = 1 AND reservada > 0;
